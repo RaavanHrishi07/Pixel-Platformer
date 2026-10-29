@@ -75,3 +75,34 @@ def test_game_controls_are_documented():
     source = open(main.__file__, encoding="utf-8").read()
     for control in ("left", "right", "space", "escape", "checkpoint"):
         assert control in source.lower()
+
+
+def test_coin_collection_creates_visual_effect_and_updates_score():
+    game = main.PlatformerGame.__new__(main.PlatformerGame)
+    game.player = {"x": 90, "y": 90, "w": 30, "h": 40}
+    game.coins = [{"x": 100, "y": 100, "taken": False}]
+    game.level_coins = 0
+    game.total_coins = 0
+    game.coin_effects = []
+    game.collect_coins()
+    assert game.coins[0]["taken"] is True
+    assert game.level_coins == 1
+    assert game.total_coins == 1
+    assert len(game.coin_effects) == 1
+    assert len(game.coin_effects[0]["particles"]) == 8
+
+
+def test_coin_effects_animate_and_expire():
+    game = main.PlatformerGame.__new__(main.PlatformerGame)
+    game.animation_frame = 0
+    game.coin_effects = [{
+        "x": 10, "y": 20, "age": 0,
+        "particles": [{"x": 10.0, "y": 20.0, "vx": 1.0, "vy": -1.0, "color": "#fff"}],
+    }]
+    game.update_coin_effects()
+    assert game.animation_frame == 1
+    assert game.coin_effects[0]["age"] == 1
+    assert game.coin_effects[0]["particles"][0]["x"] == 11.0
+    game.coin_effects[0]["age"] = 27
+    game.update_coin_effects()
+    assert game.coin_effects == []
