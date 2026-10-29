@@ -202,6 +202,8 @@ class PlatformerGame:
         self.camera_x = 0
         self.level_coins = 0
         self.checkpoint_message = 0
+        self.animation_frame = 0
+        self.coin_effects = []
 
     def start_game(self):
         """Start a fresh run while preserving the selected settings."""
@@ -422,6 +424,32 @@ class PlatformerGame:
                 coin["taken"] = True
                 self.level_coins += 1
                 self.total_coins += 1
+                self.spawn_coin_effect(coin["x"], coin["y"])
+
+    def spawn_coin_effect(self, x, y):
+        """Create a short sparkle burst and floating score for a collected coin."""
+        colors = ("#FACC15", "#FEF08A", "#FFFFFF", "#FB923C")
+        particles = []
+        for index in range(8):
+            angle = index * 3.141592653589793 / 4
+            particles.append({
+                "x": float(x), "y": float(y),
+                "vx": (1.8 if index % 2 == 0 else 1.2) * __import__("math").cos(angle),
+                "vy": (1.8 if index % 2 == 0 else 1.2) * __import__("math").sin(angle),
+                "color": colors[index % len(colors)],
+            })
+        self.coin_effects.append({"x": x, "y": y, "age": 0, "particles": particles})
+
+    def update_coin_effects(self):
+        """Advance coin sparkles and remove effects after their short lifetime."""
+        self.animation_frame += 1
+        for effect in self.coin_effects:
+            effect["age"] += 1
+            for particle in effect["particles"]:
+                particle["x"] += particle["vx"]
+                particle["y"] += particle["vy"]
+                particle["vy"] += 0.035
+        self.coin_effects = [effect for effect in self.coin_effects if effect["age"] < 28]
 
     def check_hazards_and_goal(self):
         rect = player_rect(self.player)
@@ -454,6 +482,7 @@ class PlatformerGame:
             self.root.after(16, self.tick)
             return
         if not self.paused:
+            self.update_coin_effects()
             self.move_player()
             if self.screen != "playing":
                 self.tick_draw_after_state_change()
@@ -539,11 +568,31 @@ class PlatformerGame:
             if coin["taken"]:
                 continue
             x, y = coin["x"] - cam, coin["y"]
+            # A subtle pulse makes uncollected coins shimmer as the player moves.
+            pulse = (self.animation_frame % 18) / 18
+            half_width = 7 + abs(pulse - 0.5) * 6
             c.create_oval(
-                x - 10, y - 10, x + 10, y + 10,
+                x - half_width, y - 10, x + half_width, y + 10,
                 fill="#FACC15", outline="#CA8A04", width=2
             )
-            c.create_oval(x - 4, y - 7, x + 4, y + 7, fill="#FEF08A", outline="")
+            c.create_oval(x - 3, y - 7, x + 3, y + 7, fill="#FEF08A", outline="")
+
+        # Draw collection sparkles and a floating +1 score popup.
+        for effect in self.coin_effects:
+            age = effect["age"]
+            x, y = effect["x"] - cam, effect["y"] - age * 1.35
+            if age < 20:
+                c.create_text(
+                    x, y - 12, text="+1 COIN", fill="#FFF7AE",
+                    font=("Segoe UI", 10, "bold")
+                )
+            for particle in effect["particles"]:
+                px, py = particle["x"] - cam, particle["y"]
+                size = max(1.5, 4 - age * 0.1)
+                c.create_line(px - size, py, px + size, py,
+                              fill=particle["color"], width=2)
+                c.create_line(px, py - size, px, py + size,
+                              fill=particle["color"], width=2)
 
         for enemy in self.enemies:
             if not enemy["alive"]:
