@@ -6,6 +6,7 @@ GRAVITY = 0.65
 MOVE_SPEED = 5
 JUMP_SPEED = -13.5
 INVULNERABLE_FRAMES = 90
+DIFFICULTIES = {"Easy": {"lives": 5, "enemy_speed": 1.1}, "Normal": {"lives": 3, "enemy_speed": 1.5}, "Hard": {"lives": 2, "enemy_speed": 2.0}}
 
 LEVELS = [
     {
@@ -128,7 +129,11 @@ class PlatformerGame:
             bg="#87CEEB", highlightthickness=0
         )
         self.canvas.pack()
+        self.canvas.bind("<Button-1>", self.handle_click)
 
+        self.screen = "menu"
+        self.difficulty = "Normal"
+        self.menu_buttons = {}
         self.keys = set()
         root.bind("<KeyPress>", self.key_down)
         root.bind("<KeyRelease>", self.key_up)
@@ -136,7 +141,7 @@ class PlatformerGame:
 
         self.level_index = 0
         self.total_coins = 0
-        self.lives = 3
+        self.lives = DIFFICULTIES[self.difficulty]["lives"]
         self.paused = False
         self.load_level()
         self.tick()
@@ -144,12 +149,23 @@ class PlatformerGame:
     def key_down(self, event):
         key = event.keysym.lower()
         self.keys.add(key)
+        if key == "escape":
+            if self.screen in ("instructions", "settings"):
+                self.screen = "menu"
+            elif self.screen == "playing":
+                self.screen = "menu"
+                self.keys.clear()
+            else:
+                self.root.destroy()
+            return
+        if self.screen != "playing":
+            if key in ("return", "space") and self.screen in ("menu", "game_over", "victory"):
+                self.start_game()
+            return
         if key == "p":
             self.paused = not self.paused
         elif key == "r":
             self.load_level()
-        elif key == "escape":
-            self.root.destroy()
 
     def key_up(self, event):
         self.keys.discard(event.keysym.lower())
@@ -185,6 +201,107 @@ class PlatformerGame:
         }
         self.camera_x = 0
         self.level_coins = 0
+        self.checkpoint_message = 0
+
+    def start_game(self):
+        """Start a fresh run while preserving the selected settings."""
+        self.screen = "playing"
+        self.level_index = 0
+        self.total_coins = 0
+        self.lives = DIFFICULTIES[self.difficulty]["lives"]
+        self.paused = False
+        self.load_level()
+
+    def handle_click(self, event):
+        """Dispatch clicks to the currently visible menu buttons."""
+        for name, bounds in self.menu_buttons.items():
+            x1, y1, x2, y2 = bounds
+            if x1 <= event.x <= x2 and y1 <= event.y <= y2:
+                if name == "start":
+                    self.start_game()
+                elif name == "instructions":
+                    self.screen = "instructions"
+                elif name == "settings":
+                    self.screen = "settings"
+                elif name == "back":
+                    self.screen = "menu"
+                elif name == "difficulty":
+                    names = list(DIFFICULTIES)
+                    self.difficulty = names[(names.index(self.difficulty) + 1) % len(names)]
+                elif name == "retry":
+                    self.start_game()
+                elif name == "menu":
+                    self.screen = "menu"
+                elif name == "quit":
+                    self.root.destroy()
+                break
+
+    def draw_button(self, name, label, x, y, width=260, height=48, fill="#2563EB"):
+        x1, y1 = x - width // 2, y - height // 2
+        x2, y2 = x + width // 2, y + height // 2
+        self.canvas.create_rectangle(x1, y1, x2, y2, fill=fill, outline="#93C5FD", width=2)
+        self.canvas.create_text(x, y, text=label, fill="#FFFFFF", font=("Segoe UI", 13, "bold"))
+        self.menu_buttons[name] = (x1, y1, x2, y2)
+
+    def draw_menu_background(self):
+        c = self.canvas
+        c.create_rectangle(0, 0, WIDTH, HEIGHT, fill="#0F172A", outline="")
+        # Pixel-art hills and floating platforms create a game-like title screen.
+        c.create_oval(-100, 370, 420, 760, fill="#14532D", outline="")
+        c.create_oval(300, 410, 800, 750, fill="#166534", outline="")
+        c.create_oval(650, 360, 1150, 760, fill="#14532D", outline="")
+        for x, y in ((90, 100), (830, 115), (760, 230), (180, 260), (690, 80)):
+            c.create_rectangle(x, y, x + 90, y + 12, fill="#7C4A2D", outline="")
+            c.create_rectangle(x, y, x + 90, y + 5, fill="#22C55E", outline="")
+        c.create_oval(740, 145, 760, 165, fill="#FACC15", outline="#CA8A04", width=2)
+        c.create_oval(790, 285, 810, 305, fill="#FACC15", outline="#CA8A04", width=2)
+
+    def draw_menu_screen(self):
+        self.menu_buttons = {}
+        self.draw_menu_background()
+        c = self.canvas
+        c.create_text(WIDTH // 2, 82, text="PIXEL QUEST", fill="#F8FAFC", font=("Segoe UI", 36, "bold"))
+        c.create_text(WIDTH // 2, 124, text="A tiny hero. A huge adventure.", fill="#93C5FD", font=("Segoe UI", 13))
+        self.draw_button("start", "▶   START GAME", WIDTH // 2, 220, fill="#15803D")
+        self.draw_button("instructions", "HOW TO PLAY  /  INSTRUCTIONS", WIDTH // 2, 282, width=300, fill="#334155")
+        self.draw_button("settings", "⚙   SETTINGS", WIDTH // 2, 344, fill="#334155")
+        c.create_text(WIDTH // 2, 425, text=f"Difficulty: {self.difficulty}   •   3 worlds   •   Checkpoints enabled", fill="#E2E8F0", font=("Segoe UI", 10))
+        c.create_text(WIDTH // 2, 555, text="Move: ← → / A D     Jump: SPACE / ↑ / W     Pause: P", fill="#CBD5E1", font=("Segoe UI", 10))
+
+    def draw_instructions_screen(self):
+        self.menu_buttons = {}
+        self.draw_menu_background()
+        c = self.canvas
+        c.create_text(WIDTH // 2, 90, text="HOW TO PLAY", fill="#F8FAFC", font=("Segoe UI", 28, "bold"))
+        lines = ["MOVE      Left / Right arrows or A / D", "JUMP      Space, Up arrow or W", "PAUSE     Press P during a run", "CHECKPOINTS   Touch a flag to save your respawn point", "HAZARDS   Avoid spikes and enemies; stomp enemies from above", "GOAL      Reach the red flag to advance to the next world", "COINS     Collect coins and try to finish every level"]
+        for i, line in enumerate(lines):
+            c.create_text(WIDTH // 2, 175 + i * 42, text=line, fill="#E2E8F0", font=("Segoe UI", 12, "bold" if i == 0 else "normal"))
+        self.draw_button("back", "←   BACK TO MENU", WIDTH // 2, 510, fill="#334155")
+
+    def draw_settings_screen(self):
+        self.menu_buttons = {}
+        self.draw_menu_background()
+        c = self.canvas
+        c.create_text(WIDTH // 2, 110, text="SETTINGS", fill="#F8FAFC", font=("Segoe UI", 28, "bold"))
+        c.create_text(WIDTH // 2, 195, text="DIFFICULTY", fill="#93C5FD", font=("Segoe UI", 12, "bold"))
+        c.create_text(WIDTH // 2, 230, text=f"{self.difficulty}  •  {DIFFICULTIES[self.difficulty]['lives']} lives", fill="#F8FAFC", font=("Segoe UI", 18, "bold"))
+        self.draw_button("difficulty", "CHANGE DIFFICULTY", WIDTH // 2, 300, width=280, fill="#334155")
+        c.create_text(WIDTH // 2, 370, text="Easy: 5 lives     Normal: 3 lives     Hard: 2 lives", fill="#CBD5E1", font=("Segoe UI", 10))
+        c.create_text(WIDTH // 2, 400, text="Settings apply to your next new run.", fill="#CBD5E1", font=("Segoe UI", 10))
+        self.draw_button("back", "←   BACK TO MENU", WIDTH // 2, 500, fill="#334155")
+
+    def draw_end_screen(self, victory=False):
+        self.menu_buttons = {}
+        self.draw_menu_background()
+        c = self.canvas
+        title = "QUEST COMPLETE!" if victory else "GAME OVER"
+        color = "#86EFAC" if victory else "#FDA4AF"
+        c.create_text(WIDTH // 2, 130, text=title, fill=color, font=("Segoe UI", 32, "bold"))
+        c.create_text(WIDTH // 2, 200, text=f"Coins collected: {self.total_coins}", fill="#FACC15", font=("Segoe UI", 16, "bold"))
+        c.create_text(WIDTH // 2, 238, text=f"World reached: {LEVELS[min(self.level_index, len(LEVELS)-1)]['name']}", fill="#E2E8F0", font=("Segoe UI", 12))
+        self.draw_button("retry", "↻   PLAY AGAIN", WIDTH // 2, 320, fill="#15803D")
+        self.draw_button("menu", "MAIN MENU", WIDTH // 2, 382, fill="#334155")
+        self.draw_button("quit", "QUIT GAME", WIDTH // 2, 444, fill="#7F1D1D")
 
     def respawn_player(self):
         """Respawn at the last activated checkpoint without resetting the level."""
@@ -217,15 +334,8 @@ class PlatformerGame:
 
         self.lives -= 1
         if self.lives <= 0:
-            messagebox.showinfo(
-                "Game Over",
-                f"Game over! Coins collected: {self.total_coins}\n"
-                "Your run will restart from the first level."
-            )
-            self.level_index = 0
-            self.total_coins = 0
-            self.lives = 3
-            self.load_level()
+            self.screen = "game_over"
+            self.keys.clear()
             return
 
         # Keep collected coins, defeated enemies and activated checkpoint
@@ -280,7 +390,7 @@ class PlatformerGame:
         for enemy in self.enemies:
             if not enemy["alive"]:
                 continue
-            enemy["x"] += enemy["direction"] * 1.5
+            enemy["x"] += enemy["direction"] * DIFFICULTIES[self.difficulty]["enemy_speed"]
             if enemy["x"] <= enemy["left"]:
                 enemy["x"], enemy["direction"] = enemy["left"], 1
             elif enemy["x"] >= enemy["right"]:
@@ -326,24 +436,36 @@ class PlatformerGame:
                 self.level_index += 1
                 self.load_level()
             else:
-                messagebox.showinfo(
-                    "Quest Complete!",
-                    f"You completed all {len(LEVELS)} levels!\n"
-                    f"Coins: {self.total_coins}"
-                )
-                self.level_index = 0
-                self.total_coins = 0
-                self.lives = 3
-                self.load_level()
+                self.screen = "victory"
+                self.keys.clear()
 
     def tick(self):
+        if self.screen != "playing":
+            if self.screen == "menu":
+                self.draw_menu_screen()
+            elif self.screen == "instructions":
+                self.draw_instructions_screen()
+            elif self.screen == "settings":
+                self.draw_settings_screen()
+            elif self.screen == "game_over":
+                self.draw_end_screen(victory=False)
+            elif self.screen == "victory":
+                self.draw_end_screen(victory=True)
+            self.root.after(16, self.tick)
+            return
         if not self.paused:
             self.move_player()
+            if self.screen != "playing":
+                self.tick_draw_after_state_change()
+                return
             self.update_enemies()
             self.collect_coins()
             self.activate_checkpoints()
             if not self.paused:
                 self.check_hazards_and_goal()
+            if self.screen != "playing":
+                self.tick_draw_after_state_change()
+                return
 
             if hasattr(self, "checkpoint_message") and self.checkpoint_message > 0:
                 self.checkpoint_message -= 1
@@ -355,6 +477,14 @@ class PlatformerGame:
                 )
             )
         self.draw()
+        self.root.after(16, self.tick)
+
+    def tick_draw_after_state_change(self):
+        """Render the end screen on the same frame that the run ends."""
+        if self.screen == "game_over":
+            self.draw_end_screen(victory=False)
+        elif self.screen == "victory":
+            self.draw_end_screen(victory=True)
         self.root.after(16, self.tick)
 
     def draw_background(self):
@@ -374,6 +504,7 @@ class PlatformerGame:
     def draw(self):
         c = self.canvas
         c.delete("all")
+        self.menu_buttons = {}
         self.draw_background()
         cam = self.camera_x
 

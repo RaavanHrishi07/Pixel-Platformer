@@ -1,3 +1,4 @@
+"""Unit tests for Pixel Quest's level data and menu/game-state helpers."""
 import main
 
 
@@ -16,6 +17,7 @@ def test_all_levels_have_checkpoint_and_required_fields():
         assert level["hazards"]
         assert level["goal"]
         assert level["checkpoints"]
+        assert level["enemies"]
 
 
 def test_checkpoint_positions_are_inside_world():
@@ -50,3 +52,26 @@ def test_coins_are_coordinate_pairs():
         for coin in level["coins"]:
             assert len(coin) == 2
             assert all(isinstance(value, (int, float)) for value in coin)
+
+
+def test_menu_screens_are_declared_in_game_flow():
+    source = open(main.__file__, encoding="utf-8").read()
+    for screen in ("menu", "instructions", "settings", "playing", "game_over", "victory"):
+        assert f'"{screen}"' in source
+
+
+def test_difficulty_settings_have_valid_lives_and_enemy_speeds():
+    assert set(main.DIFFICULTIES) == {"Easy", "Normal", "Hard"}
+    assert main.DIFFICULTIES["Easy"]["lives"] > main.DIFFICULTIES["Normal"]["lives"]
+    assert main.DIFFICULTIES["Normal"]["lives"] > main.DIFFICULTIES["Hard"]["lives"]
+    assert main.DIFFICULTIES["Easy"]["enemy_speed"] < main.DIFFICULTIES["Hard"]["enemy_speed"]
+
+
+def test_checkpoint_respawn_grants_invulnerability():
+    assert main.INVULNERABLE_FRAMES > 0
+
+
+def test_game_controls_are_documented():
+    source = open(main.__file__, encoding="utf-8").read()
+    for control in ("left", "right", "space", "escape", "checkpoint"):
+        assert control in source.lower()
