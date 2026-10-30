@@ -7,6 +7,9 @@ GRAVITY = 0.65
 MOVE_SPEED = 5
 JUMP_SPEED = -13.5
 INVULNERABLE_FRAMES = 90
+ATTACK_DURATION = 10
+ATTACK_COOLDOWN = 24
+ATTACK_RANGE = 44
 DIFFICULTIES = {"Easy": {"lives": 5, "enemy_speed": 1.1}, "Normal": {"lives": 3, "enemy_speed": 1.5}, "Hard": {"lives": 2, "enemy_speed": 2.0}}
 
 LEVELS = [
@@ -167,6 +170,8 @@ class PlatformerGame:
             self.paused = not self.paused
         elif key == "r":
             self.load_level()
+        elif key == "j":
+            self.start_attack()
 
     def key_up(self, event):
         self.keys.discard(event.keysym.lower())
@@ -210,6 +215,9 @@ class PlatformerGame:
         self.player_anim_state = "idle"
         self.player_facing = 1
         self.landing_timer = 0
+        self.attack_timer = 0
+        self.attack_cooldown = 0
+        self.attack_has_hit = False
 
     def start_game(self):
         """Start a fresh run while preserving the selected settings."""
@@ -281,7 +289,7 @@ class PlatformerGame:
         self.draw_menu_background()
         c = self.canvas
         c.create_text(WIDTH // 2, 90, text="HOW TO PLAY", fill="#F8FAFC", font=("Segoe UI", 28, "bold"))
-        lines = ["MOVE      Left / Right arrows or A / D", "JUMP      Space, Up arrow or W", "PAUSE     Press P during a run", "CHECKPOINTS   Touch a flag to save your respawn point", "HAZARDS   Avoid spikes and enemies; stomp enemies from above", "GOAL      Reach the red flag to advance to the next world", "COINS     Collect coins and try to finish every level"]
+        lines = ["MOVE      Left / Right arrows or A / D", "JUMP      Space, Up arrow or W", "ATTACK    Press J to swing your sword", "PAUSE     Press P during a run", "CHECKPOINTS   Touch a flag to save your respawn point", "HAZARDS   Avoid spikes and enemies; stomp enemies from above", "GOAL      Reach the red flag to advance to the next world", "COINS     Collect coins and try to finish every level"]
         for i, line in enumerate(lines):
             c.create_text(WIDTH // 2, 175 + i * 42, text=line, fill="#E2E8F0", font=("Segoe UI", 12, "bold" if i == 0 else "normal"))
         self.draw_button("back", "←   BACK TO MENU", WIDTH // 2, 510, fill="#334155")
@@ -423,24 +431,56 @@ class PlatformerGame:
         else:
             self.player_anim_state = "idle"
 
+    def start_attack(self):
+        """Start a short forward melee attack when its cooldown is ready."""
+        if self.attack_cooldown > 0 or self.attack_timer > 0:
+            return False
+        self.attack_timer = ATTACK_DURATION
+        self.attack_cooldown = ATTACK_COOLDOWN
+        self.attack_has_hit = False
+        return True
+
+    def get_attack_rect(self):
+        """Return the active sword hitbox in world coordinates."""
+        p = self.player
+        if self.player_facing > 0:
+            left = p["x"] + p["w"] - 2
+        else:
+            left = p["x"] - ATTACK_RANGE + 2
+        return (left, p["y"] + 7, left + ATTACK_RANGE, p["y"] + 34)
+
     def update_enemies(self):
+        """Move enemies, resolve sword hits, then handle player collisions."""
+        if self.attack_cooldown > 0:
+            self.attack_cooldown -= 1
+        if self.attack_timer > 0:
+            self.attack_timer -= 1
+
+        attack_rect = self.get_attack_rect() if self.attack_timer > 0 and not self.attack_has_hit else None
         for enemy in self.enemies:
             if not enemy["alive"]:
+                if enemy.get("defeated_timer", 0) > 0:
+                    enemy["defeated_timer"] -= 1
                 continue
+
             enemy["x"] += enemy["direction"] * DIFFICULTIES[self.difficulty]["enemy_speed"]
             if enemy["x"] <= enemy["left"]:
                 enemy["x"], enemy["direction"] = enemy["left"], 1
             elif enemy["x"] >= enemy["right"]:
                 enemy["x"], enemy["direction"] = enemy["right"], -1
 
-            enemy_rect = (
-                enemy["x"], enemy["y"],
-                enemy["x"] + 30, enemy["y"] + 30,
-            )
+            enemy_rect = (enemy["x"], enemy["y"], enemy["x"] + 30, enemy["y"] + 30)
+            if attack_rect and rectangles_intersect(attack_rect, enemy_rect):
+                enemy["alive"] = False
+                enemy["defeated_timer"] = 12
+                self.attack_has_hit = True
+                continue
+
             if rectangles_intersect(player_rect(self.player), enemy_rect):
                 p = self.player
                 if p["vy"] > 1 and p["y"] + p["h"] - enemy["y"] < 22:
                     enemy["alive"] = False
+                    enemy["defeated_timer"] = 12
                     p["vy"] = JUMP_SPEED * 0.65
                 else:
                     self.lose_life()
@@ -630,9 +670,13 @@ class PlatformerGame:
                               fill=particle["color"], width=2)
 
         for enemy in self.enemies:
-            if not enemy["alive"]:
-                continue
             x, y = enemy["x"] - cam, enemy["y"]
+            if not enemy["alive"]:
+                timer = enemy.get("defeated_timer", 0)
+                if timer > 0 and -40 <= x <= WIDTH + 40:
+                    c.create_text(x + 15, y + 8 - (12 - timer) * 2, text="✦",
+                                  fill="#FDE047", font=("Segoe UI", 18, "bold"))
+                continue
             if -40 <= x <= WIDTH + 40:
                 c.create_oval(
                     x, y, x + 30, y + 30,
@@ -737,6 +781,21 @@ class PlatformerGame:
                                fill="#1F2937", outline="")
             c.create_rectangle(x + 18, y + right_foot_y, x + 28, y + right_foot_y + 6,
                                fill="#1F2937", outline="")
+
+        # Draw a bright forward sword slash while the attack animation is active.
+        if getattr(self, "attack_timer", 0) > 0:
+            facing = getattr(self, "player_facing", 1)
+            swing_x = x + (27 if facing > 0 else 3)
+            swing_y = y + 22
+            reach = 43
+            c.create_line(
+                swing_x, swing_y - 12, swing_x + facing * reach, swing_y + 5,
+                fill="#E0F2FE", width=5, capstyle=tk.ROUND
+            )
+            c.create_line(
+                swing_x, swing_y - 12, swing_x + facing * reach, swing_y + 5,
+                fill="#38BDF8", width=2, capstyle=tk.ROUND
+            )
 
         c.create_rectangle(16, 14, 400, 94, fill="#101827", outline="#334155", width=2)
         c.create_text(
