@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import messagebox
+import math
 
 WIDTH, HEIGHT = 960, 600
 GRAVITY = 0.65
@@ -204,6 +205,11 @@ class PlatformerGame:
         self.checkpoint_message = 0
         self.animation_frame = 0
         self.coin_effects = []
+        # Player animation state is reset whenever a level is loaded.
+        self.player_anim_frame = 0
+        self.player_anim_state = "idle"
+        self.player_facing = 1
+        self.landing_timer = 0
 
     def start_game(self):
         """Start a fresh run while preserving the selected settings."""
@@ -346,6 +352,7 @@ class PlatformerGame:
 
     def move_player(self):
         p = self.player
+        was_on_ground = p["on_ground"]
         if p["invulnerable"] > 0:
             p["invulnerable"] -= 1
 
@@ -387,6 +394,34 @@ class PlatformerGame:
 
         if p["y"] > HEIGHT + 150:
             self.lose_life()
+
+        self.update_player_animation(was_on_ground)
+
+    def update_player_animation(self, was_on_ground=None):
+        """Choose the player's animation state from movement and physics."""
+        p = self.player
+        if was_on_ground is None:
+            was_on_ground = p["on_ground"]
+
+        if p["vx"] < 0:
+            self.player_facing = -1
+        elif p["vx"] > 0:
+            self.player_facing = 1
+
+        if not p["on_ground"]:
+            self.landing_timer = 0
+            self.player_anim_state = "jump" if p["vy"] < 0 else "fall"
+        elif not was_on_ground:
+            self.landing_timer = 7
+            self.player_anim_state = "land"
+        elif self.landing_timer > 0:
+            self.landing_timer -= 1
+            self.player_anim_state = "land"
+        elif abs(p["vx"]) > 0:
+            self.player_anim_state = "run"
+            self.player_anim_frame = (self.player_anim_frame + 1) % 12
+        else:
+            self.player_anim_state = "idle"
 
     def update_enemies(self):
         for enemy in self.enemies:
@@ -636,9 +671,53 @@ class PlatformerGame:
         p = self.player
         if p["invulnerable"] == 0 or (p["invulnerable"] // 5) % 2 == 0:
             x, y = p["x"] - cam, p["y"]
+            state = getattr(self, "player_anim_state", "idle")
+            frame = getattr(self, "player_anim_frame", 0)
+            facing = getattr(self, "player_facing", 1)
+
+            # Small, restrained offsets keep the original 30x40 pixel hero design.
+            bob = 0
+            leg_left, leg_right = 34, 34
+            arm_offset = 0
+            body_y = 12
+            body_bottom = 38
+            if state == "run":
+                phase = frame % 12
+                stride = 4 if phase < 3 or 6 <= phase < 9 else -4
+                bob = -2 if phase in (2, 3, 8, 9) else 0
+                leg_left, leg_right = 34 + stride, 34 - stride
+                arm_offset = -stride
+            elif state == "jump":
+                leg_left, leg_right = 29, 32
+                arm_offset = -4
+                body_y = 10
+                body_bottom = 36
+            elif state == "fall":
+                leg_left, leg_right = 32, 32
+                arm_offset = 3
+            elif state == "land":
+                squash = 2 if self.landing_timer > 3 else 1
+                body_y = 12 + squash
+                body_bottom = 38 - squash
+                leg_left = leg_right = 35
+            else:  # idle breathing
+                bob = -1 if self.animation_frame % 30 < 15 else 0
+
+            y += bob
+            # Back arm, torso and front arm.
             c.create_rectangle(
-                x + 4, y + 12, x + 26, y + 38,
+                x + (1 if facing > 0 else 23), y + 16 + arm_offset,
+                x + (7 if facing > 0 else 29), y + 29 + arm_offset,
+                fill="#F4B183", outline="#B45309", width=1
+            )
+            c.create_rectangle(
+                x + 4, y + body_y, x + 26, y + body_bottom,
                 fill="#2563EB", outline="#1D4ED8", width=2
+            )
+            c.create_rectangle(
+                x + (23 if facing > 0 else 1), y + 15 - arm_offset,
+                x + (29 if facing > 0 else 7), y + 29 - arm_offset,
+                fill="#F4B183", outline="#B45309", width=1
             )
             c.create_rectangle(
                 x + 2, y + 2, x + 28, y + 18,
@@ -648,9 +727,16 @@ class PlatformerGame:
                 x, y, x + 30, y + 8,
                 fill="#DC2626", outline="#991B1B", width=2
             )
-            c.create_rectangle(x + 18, y + 8, x + 23, y + 13, fill="#111827", outline="")
-            c.create_rectangle(x + 3, y + 34, x + 13, y + 40, fill="#1F2937", outline="")
-            c.create_rectangle(x + 18, y + 34, x + 28, y + 40, fill="#1F2937", outline="")
+            eye_x = x + (18 if facing > 0 else 7)
+            c.create_rectangle(eye_x, y + 8, eye_x + 5, y + 13, fill="#111827", outline="")
+
+            # Alternating legs create a readable run cycle; airborne poses tuck them.
+            left_foot_y = leg_left if state in ("run", "jump", "fall", "land") else 34
+            right_foot_y = leg_right if state in ("run", "jump", "fall", "land") else 34
+            c.create_rectangle(x + 3, y + left_foot_y, x + 13, y + left_foot_y + 6,
+                               fill="#1F2937", outline="")
+            c.create_rectangle(x + 18, y + right_foot_y, x + 28, y + right_foot_y + 6,
+                               fill="#1F2937", outline="")
 
         c.create_rectangle(16, 14, 400, 94, fill="#101827", outline="#334155", width=2)
         c.create_text(
