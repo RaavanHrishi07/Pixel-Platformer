@@ -106,3 +106,53 @@ def test_coin_effects_animate_and_expire():
     game.coin_effects[0]["age"] = 27
     game.update_coin_effects()
     assert game.coin_effects == []
+
+
+
+def test_player_animation_state_starts_idle():
+    game = main.PlatformerGame.__new__(main.PlatformerGame)
+    game.player = {"vx": 0, "vy": 0, "on_ground": True}
+    game.player_facing = 1
+    game.player_anim_frame = 0
+    game.player_anim_state = "idle"
+    game.landing_timer = 0
+    game.update_player_animation(was_on_ground=True)
+    assert game.player_anim_state == "idle"
+
+
+def test_player_running_animation_advances_and_faces_direction():
+    game = main.PlatformerGame.__new__(main.PlatformerGame)
+    game.player = {"vx": 5, "vy": 0, "on_ground": True}
+    game.player_facing = 1
+    game.player_anim_frame = 0
+    game.player_anim_state = "idle"
+    game.landing_timer = 0
+    game.update_player_animation(was_on_ground=True)
+    assert game.player_anim_state == "run"
+    assert game.player_anim_frame == 1
+    assert game.player_facing == 1
+
+
+def test_player_jump_and_fall_animation_states():
+    game = main.PlatformerGame.__new__(main.PlatformerGame)
+    game.player_facing = 1
+    game.player_anim_frame = 0
+    game.landing_timer = 0
+    game.player = {"vx": -5, "vy": -6, "on_ground": False}
+    game.update_player_animation(was_on_ground=True)
+    assert game.player_anim_state == "jump"
+    assert game.player_facing == -1
+    game.player["vy"] = 4
+    game.update_player_animation(was_on_ground=False)
+    assert game.player_anim_state == "fall"
+
+
+def test_player_landing_animation_is_triggered():
+    game = main.PlatformerGame.__new__(main.PlatformerGame)
+    game.player = {"vx": 0, "vy": 0, "on_ground": True}
+    game.player_facing = 1
+    game.player_anim_frame = 0
+    game.landing_timer = 0
+    game.update_player_animation(was_on_ground=False)
+    assert game.player_anim_state == "land"
+    assert game.landing_timer == 7
