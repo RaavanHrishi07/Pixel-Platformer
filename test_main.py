@@ -156,3 +156,54 @@ def test_player_landing_animation_is_triggered():
     game.update_player_animation(was_on_ground=False)
     assert game.player_anim_state == "land"
     assert game.landing_timer == 7
+
+
+def make_combat_game():
+    game = main.PlatformerGame.__new__(main.PlatformerGame)
+    game.player = {"x": 100.0, "y": 100.0, "vx": 0.0, "vy": 0.0, "w": 30, "h": 40, "on_ground": True, "invulnerable": 0}
+    game.player_facing = 1
+    game.attack_timer = 0
+    game.attack_cooldown = 0
+    game.attack_has_hit = False
+    game.enemies = [{"x": 140.0, "y": 108.0, "left": 140.0, "right": 180.0, "direction": 1, "alive": True}]
+    game.difficulty = "Normal"
+    game.lives = 3
+    game.screen = "playing"
+    game.keys = set()
+    game.respawn_position = (100, 100)
+    game.camera_x = 0
+    game.world_width = main.WIDTH
+    return game
+
+
+def test_attack_starts_and_respects_cooldown():
+    game = make_combat_game()
+    assert game.start_attack() is True
+    assert game.attack_timer == main.ATTACK_DURATION
+    assert game.attack_cooldown == main.ATTACK_COOLDOWN
+    assert game.start_attack() is False
+
+
+def test_attack_hitbox_faces_player_direction():
+    game = make_combat_game()
+    right_box = game.get_attack_rect()
+    assert right_box[0] >= game.player["x"] + game.player["w"] - 2
+    game.player_facing = -1
+    left_box = game.get_attack_rect()
+    assert left_box[2] <= game.player["x"] + 2
+
+
+def test_sword_attack_defeats_enemy_once():
+    game = make_combat_game()
+    assert game.start_attack()
+    game.update_enemies()
+    assert game.enemies[0]["alive"] is False
+    assert game.enemies[0]["defeated_timer"] == 12
+    assert game.attack_has_hit is True
+
+
+def test_attack_cooldown_counts_down():
+    game = make_combat_game()
+    game.attack_cooldown = 3
+    game.update_enemies()
+    assert game.attack_cooldown == 2
